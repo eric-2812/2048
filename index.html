@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>2048 — HTML/JS puro</title>
+<style>
+  :root{
+    --bg:#faf8ef;
+    --board:#bbada0;
+    --cell:#cdc1b4;
+    --text:#776e65;
+    --ui:#8f7a66;
+    --accent:#edc22e;
+    --gap:12px;
+    --tile-size:100px; /* se recalcula responsivo más abajo */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100dvh;
+    padding:20px;
+  }
+  .wrap{
+    width:min(520px, 92vw);
+  }
+  header{
+    display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
+    margin-bottom:16px;
+  }
+  h1{
+    font-size:42px; line-height:1; margin:0; font-weight:900; letter-spacing:1px; color:#776e65;
+  }
+  .scores{
+    display:flex; gap:8px; align-items:stretch;
+  }
+  .badge{
+    background:#bbada0; color:#fff; border-radius:8px; padding:8px 12px; text-align:center; min-width:88px;
+  }
+  .badge b{display:block; font-size:12px; opacity:.9; letter-spacing:.5px}
+  .badge .val{font-weight:800; font-size:18px}
+  .controls{
+    display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 16px;
+  }
+  button, .toggle{
+    background:#8f7a66; color:#fff; border:0; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer;
+  }
+  button:disabled{opacity:.6; cursor:not-allowed}
+  .hint{
+    font-size:13px; opacity:.8; margin-bottom:12px;
+  }
+
+  /* Tablero */
+  .board{
+    position:relative;
+    aspect-ratio:1/1;
+    background:var(--board);
+    border-radius:12px;
+    padding:var(--gap);
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    grid-template-rows:repeat(4, 1fr);
+    gap:var(--gap);
+    touch-action:none;
+    user-select:none;
+  }
+  .cell{
+    background:var(--cell);
+    border-radius:8px;
+    width:100%; height:100%;
+  }
+  .tile-layer{ /* capa de fichas por encima de las celdas */
+    position:absolute; inset:var(--gap);
+  }
+  .tile{
+    position:absolute;
+    width:var(--tile-size);
+    height:var(--tile-size);
+    border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:900; font-size:32px;
+    color:#f9f6f2;
+    transition:transform 90ms ease-in-out;
+    will-change:transform;
+  }
+  .tile.tile-new{animation:pop .12s ease-out}
+  .tile.tile-merge{animation:merge .16s ease-out}
+  @keyframes pop{from{transform:scale(.6)} to{transform:scale(1)}}
+  @keyframes merge{from{transform:scale(1.15)} to{transform:scale(1)}}
+
+  /* Colores por valor */
+  .v-2{background:#eee4da; color:#776e65}
+  .v-4{background:#ede0c8; color:#776e65}
+  .v-8{background:#f2b179}
+  .v-16{background:#f59563}
+  .v-32{background:#f67c5f}
+  .v-64{background:#f65e3b}
+  .v-128{background:#edcf72}
+  .v-256{background:#edcc61}
+  .v-512{background:#edc850}
+  .v-1024{background:#edc53f}
+  .v-2048{background:#edc22e}
+  .v-4096{background:#3c3a32}
+  .v-8192{background:#3c3a32}
+
+  .overlay{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(238,228,218,.7); border-radius:12px;
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:#f9f6f2; color:#776e65; border-radius:12px; padding:18px; text-align:center; width:min(85%, 360px);
+    box-shadow:0 8px 24px rgba(0,0,0,.18);
+  }
+  .modal h2{margin:0 0 8px}
+  .modal p{margin:0 0 14px}
+  .modal .row{display:flex; gap:10px; justify-content:center}
+  .modal button{background:#8f7a66}
+
+  /* Dark mode (toggle simple) */
+  .dark{
+    --bg:#1e1f22;
+    --board:#17181a;
+    --cell:#222327;
+    --text:#e6e6e6;
+    --ui:#3a3f47;
+  }
+  .dark .tile-layer .v-2, .dark .tile-layer .v-4{color:#d1cfc7}
+
+  /* Responsivo: calcula tamaño de ficha en función del ancho real */
+  @media (max-width:520px){
+    :root{ --gap:9px; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>2048</h1>
+      <div class="scores">
+        <div class="badge"><b>PUNTOS</b><div class="val" id="score">0</div></div>
+        <div class="badge"><b>MEJOR</b><div class="val" id="best">0</div></div>
+      </div>
+    </header>
+
+    <div class="controls">
+      <button id="new">Nuevo juego</button>
+      <button id="undo" title="Deshacer (Z)" disabled>Deshacer</button>
+      <button id="theme">Modo oscuro</button>
+    </div>
+
+    <div class="hint">Usa ← ↑ → ↓ o WASD. En móvil, desliza. Combina fichas iguales para llegar a <b>2048</b>.</div>
+
+    <div class="board" id="board" aria-label="Tablero 4x4" role="application">
+      <!-- Celdas de fondo -->
+      <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+      <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+      <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+      <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+
+      <!-- Capa de fichas -->
+      <div class="tile-layer" id="tiles"></div>
+
+      <!-- Overlays -->
+      <div class="overlay" id="overlay">
+        <div class="modal" id="modal">
+          <h2 id="modal-title">¡Juego terminado!</h2>
+          <p id="modal-text">No hay más movimientos.</p>
+          <div class="row">
+            <button id="continue" style="display:none">Continuar</button>
+            <button id="restart">Reiniciar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:14px;font-size:12px;opacity:.7">
+      Hecho con HTML/CSS/JS puro. Código sin dependencias externas. Guarda tu mejor puntuación automáticamente.
+    </p>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // --- Utilidades ---
+  const SIZE = 4;
+  const CHANCE_4 = 0.1;
+  const BEST_KEY = "bestScore_2048_html_v1";
+  const THEME_KEY = "theme_2048_html_v1";
+  const UNDO_LIMIT = 20;
+
+  const qs = s => document.querySelector(s);
+  const boardEl = qs("#board");
+  const tilesEl = qs("#tiles");
+  const scoreEl = qs("#score");
+  const bestEl = qs("#best");
+  const newBtn = qs("#new");
+  const undoBtn = qs("#undo");
+  const themeBtn = qs("#theme");
+  const overlay = qs("#overlay");
+  const modalTitle = qs("#modal-title");
+  const modalText = qs("#modal-text");
+  const restartBtn = qs("#restart");
+  const continueBtn = qs("#continue");
+
+  // Estado
+  let grid, score, best, won, gameOver, history;
+  let pointerStart = null;
+
+  // --- Inicialización ---
+  best = +localStorage.getItem(BEST_KEY) || 0;
+  bestEl.textContent = best.toString();
+
+  // restaurar tema
+  if(localStorage.getItem(THEME_KEY) === "dark"){
+    document.body.classList.add("dark");
+    themeBtn.textContent = "Modo claro";
+  }
+
+  function reset(){
+    grid = emptyGrid();
+    score = 0;
+    won = false;
+    gameOver = false;
+    history = [];
+    hideOverlay();
+    addRandomTile();
+    addRandomTile();
+    render(true);
+    pushHistory(); // estado inicial para permitir deshacer después de un movimiento
+    updateUndo();
+  }
+
+  function emptyGrid(){
+    return Array.from({length: SIZE}, ()=> Array(SIZE).fill(0));
+  }
+
+  function addRandomTile(){
+    const empties = [];
+    for(let r=0;r<SIZE;r++){
+      for(let c=0;c<SIZE;c++){
+        if(grid[r][c]===0) empties.push([r,c]);
+      }
+    }
+    if(!empties.length) return false;
+    const [r,c] = empties[Math.floor(Math.random()*empties.length)];
+    grid[r][c] = Math.random() < CHANCE_4 ? 4 : 2;
+    // marcar como nueva para animación: guardamos un mapa temporal
+    newlyAdded.push(`${r},${c}`);
+    return true;
+  }
+
+  // Manejo de movimientos
+  function move(dir){
+    // dir: "left","right","up","down"
+    if(gameOver) return false;
+    const before = stringify(grid);
+    let moved = false;
+    let mergedThisMove = [];
+    if(dir==="left"||dir==="right"){
+      for(let r=0;r<SIZE;r++){
+        const row = grid[r].slice();
+        const res = compressAndMerge(row, dir==="right");
+        grid[r] = res.line;
+        if(res.mergedIndexes.length) res.mergedIndexes.forEach(c=>mergedThisMove.push(`${r},${c}`));
+      }
+    }else{
+      for(let c=0;c<SIZE;c++){
+        const col = [];
+        for(let r=0;r<SIZE;r++) col.push(grid[r][c]);
+        const res = compressAndMerge(col, dir==="down");
+        for(let r=0;r<SIZE;r++) grid[r][c] = res.line[r];
+        if(res.mergedIndexes.length) res.mergedIndexes.forEach(r=>mergedThisMove.push(`${r},${c}`));
+      }
+    }
+    moved = before !== stringify(grid);
+    if(moved){
+      pushHistory();
+      addRandomTile();
+      render(false, mergedThisMove);
+      updateUndo();
+      checkEnd();
+      return true;
+    }
+    return false;
+  }
+
+  function compressAndMerge(line, reverse=false){
+    // mueve no-ceros hacia un lado, fusiona iguales una vez
+    if(reverse) line = line.slice().reverse();
+    const filtered = line.filter(v=>v!==0);
+    const result = [];
+    const mergedIdx = [];
+    for(let i=0;i<filtered.length;i++){
+      if(filtered[i]===filtered[i+1]){
+        const v = filtered[i]*2;
+        result.push(v);
+        i++; // saltar el siguiente
+        score += v;
+        if(v===2048) won = true;
+        mergedIdx.push(result.length-1);
+      }else{
+        result.push(filtered[i]);
+      }
+    }
+    while(result.length < SIZE) result.push(0);
+    let output = result;
+    if(reverse) output = result.slice().reverse();
+    // necesitamos devolver las posiciones (índices) donde quedaron las fusiones en el eje mayoritario
+    // Para simplicidad: cuando reverse=true, los índices también se invierten.
+    const mergedIndexes = [];
+    if(!reverse){
+      mergedIdx.forEach(idx=> mergedIndexes.push(idx));
+    }else{
+      mergedIdx.forEach(idx=> mergedIndexes.push(SIZE-1-idx));
+    }
+    return { line: output, mergedIndexes };
+  }
+
+  function checkEnd(){
+    // actualizar mejor puntuación
+    if(score > best){
+      best = score;
+      localStorage.setItem(BEST_KEY, best);
+      bestEl.textContent = best.toString();
+    }
+    if(won){
+      showOverlay("¡Has llegado a 2048! 🎉", "Puedes seguir jugando para una puntuación mayor.", true);
+      won = false; // mostramos una vez y permitimos continuar
+      return;
+    }
+    if(!canMove()){
+      gameOver = true;
+      showOverlay("¡Juego terminado!", "No hay más movimientos.");
+    }
+  }
+
+  function canMove(){
+    // hay huecos
+    for(let r=0;r<SIZE;r++){
+      for(let c=0;c<SIZE;c++){
+        if(grid[r][c]===0) return true;
+      }
+    }
+    // o fusiones posibles
+    for(let r=0;r<SIZE;r++){
+      for(let c=0;c<SIZE;c++){
+        const v = grid[r][c];
+        if(r+1<SIZE && grid[r+1][c]===v) return true;
+        if(c+1<SIZE && grid[r][c+1]===v) return true;
+      }
+    }
+    return false;
+  }
+
+  // --- Render ---
+  let newlyAdded = []; // posiciones "r,c" para animación de nuevas
+  function render(initial=false, mergedPositions=[]){
+    // calcular tamaño de ficha y posiciones absolutas
+    const rect = boardEl.getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 12;
+    const inner = rect.width - 2*gap;
+    const cellSize = (inner - gap*3) / 4; // 4 columnas, 3 gaps internos
+    document.documentElement.style.setProperty('--tile-size', cellSize + "px");
+
+    tilesEl.innerHTML = "";
+    for(let r=0;r<SIZE;r++){
+      for(let c=0;c<SIZE;c++){
+        const v = grid[r][c];
+        if(!v) continue;
+        const tile = document.createElement("div");
+        tile.className = `tile v-${v}`;
+        tile.textContent = v;
+        const x = c*(cellSize+gap);
+        const y = r*(cellSize+gap);
+        tile.style.transform = `translate(${x}px, ${y}px)`;
+        if(newlyAdded.includes(`${r},${c}`)) tile.classList.add("tile-new");
+        if(mergedPositions.includes(`${r},${c}`)) tile.classList.add("tile-merge");
+        tilesEl.appendChild(tile);
+      }
+    }
+    newlyAdded = [];
+    scoreEl.textContent = score.toString();
+  }
+
+  // --- Historial para Deshacer ---
+  function pushHistory(){
+    const snapshot = {
+      grid: grid.map(row=>row.slice()),
+      score
+    };
+    history.push(snapshot);
+    if(history.length > UNDO_LIMIT) history.shift();
+  }
+  function undo(){
+    if(history.length <= 1) return;
+    // quitar estado actual
+    history.pop();
+    const prev = history[history.length-1];
+    grid = prev.grid.map(r=>r.slice());
+    score = prev.score;
+    gameOver = false;
+    hideOverlay();
+    render();
+    updateUndo();
+  }
+  function updateUndo(){
+    undoBtn.disabled = history.length <= 1;
+  }
+
+  // --- Overlay ---
+  function showOverlay(title, text, canContinue=false){
+    modalTitle.textContent = title;
+    modalText.textContent = text;
+    continueBtn.style.display = canContinue ? "inline-block" : "none";
+    overlay.classList.add("show");
+  }
+  function hideOverlay(){ overlay.classList.remove("show"); }
+
+  // --- Eventos ---
+  // Teclado
+  window.addEventListener("keydown", (e)=>{
+    const k = e.key.toLowerCase();
+    let dir = null;
+    if(["arrowleft","a"].includes(k)) dir="left";
+    else if(["arrowright","d"].includes(k)) dir="right";
+    else if(["arrowup","w"].includes(k)) dir="up";
+    else if(["arrowdown","s"].includes(k)) dir="down";
+    else if(k==="z" && (e.ctrlKey || e.metaKey || !e.shiftKey)) { // Z para deshacer
+      e.preventDefault(); undo(); return;
+    }
+    if(dir){
+      e.preventDefault();
+      move(dir);
+    }
+  }, {passive:false});
+
+  // Táctil / ratón (Pointer Events)
+  boardEl.addEventListener("pointerdown", (e)=>{
+    boardEl.setPointerCapture(e.pointerId);
+    pointerStart = {x:e.clientX, y:e.clientY, t:Date.now()};
+  });
+  boardEl.addEventListener("pointerup", (e)=>{
+    if(!pointerStart) return;
+    const dx = e.clientX - pointerStart.x;
+    const dy = e.clientY - pointerStart.y;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    const dt = Date.now() - pointerStart.t;
+    pointerStart = null;
+    if(Math.max(adx, ady) < 20 || dt > 500) return; // gesto corto y rápido
+    let dir = null;
+    if(adx > ady) dir = dx>0 ? "right" : "left";
+    else dir = dy>0 ? "down" : "up";
+    move(dir);
+  });
+
+  // Botones
+  newBtn.addEventListener("click", reset);
+  restartBtn.addEventListener("click", reset);
+  continueBtn.addEventListener("click", hideOverlay);
+  undoBtn.addEventListener("click", undo);
+  themeBtn.addEventListener("click", ()=>{
+    const dark = document.body.classList.toggle("dark");
+    themeBtn.textContent = dark ? "Modo claro" : "Modo oscuro";
+    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+    // re-render para recalcular posiciones si cambia el estilo
+    render();
+  });
+
+  // Evitar scroll con flechas en móvil/desktop cuando jugamos
+  window.addEventListener("keydown", (e)=>{
+    if(["ArrowUp","ArrowDown"," "].includes(e.key)) e.preventDefault();
+  }, {passive:false});
+
+  // Iniciar
+  reset();
+
+  // Exponer para depuración opcional en consola
+  window._2048 = { get grid(){return grid.map(r=>r.slice())}, score:()=>score, reset, move, undo };
+})();
+</script>
+</body>
+</html>
