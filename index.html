@@ -45,6 +45,8 @@
   }
   .badge b{display:block; font-size:12px; opacity:.9; letter-spacing:.5px}
   .badge .val{font-weight:800; font-size:18px}
+  .badge.next{min-width:110px; background:#8f7a66;}
+  .badge.next small{display:block; font-weight:600; opacity:.92; margin-top:2px;}
   .controls{
     display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 16px;
   }
@@ -146,6 +148,7 @@
       <div class="scores">
         <div class="badge"><b>PUNTOS</b><div class="val" id="score">0</div></div>
         <div class="badge"><b>MEJOR</b><div class="val" id="best">0</div></div>
+        <div class="badge next"><b>PRÓXIMA</b><div class="val" id="next">2</div><small>Ficha entrante</small></div>
       </div>
     </header>
 
@@ -155,7 +158,7 @@
       <button id="theme">Modo oscuro</button>
     </div>
 
-    <div class="hint">Usa ← ↑ → ↓ o WASD. En móvil, desliza. Combina fichas iguales para llegar a <b>2048</b>.</div>
+    <div class="hint">Usa ← ↑ → ↓ o WASD. En móvil, desliza. Combina fichas iguales para llegar a <b>2048</b>. La tarjeta "Próxima" te adelanta la siguiente ficha.</div>
 
     <div class="board" id="board" aria-label="Tablero 4x4" role="application">
       <!-- Celdas de fondo -->
@@ -195,12 +198,14 @@
   const BEST_KEY = "bestScore_2048_html_v1";
   const THEME_KEY = "theme_2048_html_v1";
   const UNDO_LIMIT = 20;
+  let nextTileValue = 2;
 
   const qs = s => document.querySelector(s);
   const boardEl = qs("#board");
   const tilesEl = qs("#tiles");
   const scoreEl = qs("#score");
   const bestEl = qs("#best");
+  const nextEl = qs("#next");
   const newBtn = qs("#new");
   const undoBtn = qs("#undo");
   const themeBtn = qs("#theme");
@@ -231,6 +236,7 @@
     gameOver = false;
     history = [];
     hideOverlay();
+    rollNextTile();
     addRandomTile();
     addRandomTile();
     render(true);
@@ -242,6 +248,11 @@
     return Array.from({length: SIZE}, ()=> Array(SIZE).fill(0));
   }
 
+  function rollNextTile(){
+    nextTileValue = Math.random() < CHANCE_4 ? 4 : 2;
+    nextEl.textContent = nextTileValue.toString();
+  }
+
   function addRandomTile(){
     const empties = [];
     for(let r=0;r<SIZE;r++){
@@ -251,9 +262,10 @@
     }
     if(!empties.length) return false;
     const [r,c] = empties[Math.floor(Math.random()*empties.length)];
-    grid[r][c] = Math.random() < CHANCE_4 ? 4 : 2;
+    grid[r][c] = nextTileValue;
     // marcar como nueva para animación: guardamos un mapa temporal
     newlyAdded.push(`${r},${c}`);
+    rollNextTile();
     return true;
   }
 
@@ -388,13 +400,15 @@
     }
     newlyAdded = [];
     scoreEl.textContent = score.toString();
+    nextEl.textContent = nextTileValue.toString();
   }
 
   // --- Historial para Deshacer ---
   function pushHistory(){
     const snapshot = {
       grid: grid.map(row=>row.slice()),
-      score
+      score,
+      nextTileValue
     };
     history.push(snapshot);
     if(history.length > UNDO_LIMIT) history.shift();
@@ -406,6 +420,7 @@
     const prev = history[history.length-1];
     grid = prev.grid.map(r=>r.slice());
     score = prev.score;
+    nextTileValue = prev.nextTileValue;
     gameOver = false;
     hideOverlay();
     render();
